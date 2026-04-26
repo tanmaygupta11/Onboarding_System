@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/spurge/Documents/Onboarding System/**)",
+      "Bash(node --env-file=.env -e ' *)",
+      "Bash(curl -s -X POST 'https://noitppmdzhgwuaviqkvo.supabase.co/auth/v1/token?grant_type=password' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vaXRwcG1kemhnd3Vhdmlxa3ZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5MzM3MjgsImV4cCI6MjA5MjUwOTcyOH0.rbYDg7Rue1J1b50CUPeravmmNioOfRjVyz7p5xRGHeY' -H 'Content-Type: application/json' -d '{\"email\":\"rahul.pm@test.com\",\"password\":\"123456\"}')",
+      "Bash(rm -f /tmp/mobiles.csv)"
+    ]
+  }
+}
