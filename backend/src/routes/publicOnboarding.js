@@ -234,32 +234,16 @@ const MOBILE_DIGITS_REGEX = /\D/g;
 const TEN_DIGIT_REGEX = /^\d{10}$/;
 const TWELVE_DIGIT_REGEX = /^\d{12}$/;
 const OTP_TTL_MS = 15 * 60 * 1000;
-/** Fixed demo OTP until SMS / UIDAI integration; replace with generated OTP in production. */
-const DEMO_AADHAAR_OTP = '101010';
+const AADHAAR_SEND_OTP_EDGE_FUNCTION =
+  process.env.AADHAAR_SEND_OTP_EDGE_FUNCTION || 'aadhaar-send-otp';
+const AADHAAR_VERIFY_OTP_EDGE_FUNCTION =
+  process.env.AADHAAR_VERIFY_OTP_EDGE_FUNCTION || 'aadhaar-verify-otp';
+const BANK_VERIFY_EDGE_FUNCTION =
+  process.env.BANK_VERIFY_EDGE_FUNCTION || 'bank-verify';
 /** Fixed demo OTP for onboarding status login until SMS integration. */
 const DEMO_STATUS_OTP = '123123';
 const STATUS_SESSION_TTL_MS = 60 * 60 * 1000;
 
-/**
- * Placeholder KYC until real Aadhaar API — replace with API response fields.
- * Photo must be a direct image URL.
- */
-const DEMO_AADHAAR_KYC = {
-  aad_profile_photo:
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=256&h=256&fit=crop&q=80',
-  aad_name: 'Tanmay Gupta',
-  aad_care_of: 'C/O: Manoj Kumar Gupta',
-  aad_dob: '2004-11-22',
-  aad_gender: 'M',
-  aad_address:
-    'JA-4A, MIG Flats, Phase-1, Ashok Vihar, Saraswati Vihar, North West Delhi, Delhi, 110052',
-  aad_state: 'Delhi',
-  aad_district: 'North West Delhi',
-  aad_pincode: '110052',
-};
-
-/** @type {Map<string, { otp: string, aadhaar: string, expires: number }>} */
-const aadhaarOtpBySession = new Map();
 /** @type {Map<string, { otp: string, expires: number }>} */
 const statusOtpBySession = new Map();
 /** @type {Map<string, { employeeId: string, mobile: string, expires: number }>} */
@@ -271,6 +255,157 @@ function sessionKey(employeeId, mobile) {
 
 function createStatusSessionToken(employeeId, mobile) {
   return `status_${employeeId}_${mobile}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function invokeAadhaarSendOtpEdge({ uid }) {
+  const supabaseUrl = String(process.env.SUPABASE_URL ?? '').trim();
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required to invoke edge functions.');
+  }
+
+  const endpoint = `${supabaseUrl}/functions/v1/${encodeURIComponent(AADHAAR_SEND_OTP_EDGE_FUNCTION)}`;
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ uid }),
+  });
+
+  const raw = await resp.text();
+  let body = null;
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch {
+    body = null;
+  }
+  if (!resp.ok) {
+    const msg = body?.error || body?.message || `Edge function failed (${resp.status})`;
+    const err = new Error(msg);
+    err.details = body?.upstream ?? body ?? null;
+    throw err;
+  }
+  return body;
+}
+
+async function invokeAadhaarVerifyOtpEdge({ sessionId, otp }) {
+  const supabaseUrl = String(process.env.SUPABASE_URL ?? '').trim();
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required to invoke edge functions.');
+  }
+
+  const endpoint = `${supabaseUrl}/functions/v1/${encodeURIComponent(AADHAAR_VERIFY_OTP_EDGE_FUNCTION)}`;
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ sessionId, otp }),
+  });
+
+  const raw = await resp.text();
+  let body = null;
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch {
+    body = null;
+  }
+  if (!resp.ok) {
+    const msg = body?.error || body?.message || `Edge function failed (${resp.status})`;
+    const err = new Error(msg);
+    err.details = body?.upstream ?? body ?? null;
+    throw err;
+  }
+  return body;
+}
+
+async function invokeBankVerifyEdge({ idNumber, ifsc }) {
+  const supabaseUrl = String(process.env.SUPABASE_URL ?? '').trim();
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required to invoke edge functions.');
+  }
+
+  const endpoint = `${supabaseUrl}/functions/v1/${encodeURIComponent(BANK_VERIFY_EDGE_FUNCTION)}`;
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ id_number: idNumber, ifsc }),
+  });
+
+  const raw = await resp.text();
+  let body = null;
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch {
+    body = null;
+  }
+  if (!resp.ok) {
+    const msg = body?.error || body?.message || `Edge function failed (${resp.status})`;
+    const err = new Error(msg);
+    err.details = body?.upstream ?? body ?? null;
+    throw err;
+  }
+  return body;
+}
+
+function isoFromDdMmYyyy(raw) {
+  const t = String(raw ?? '').trim();
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t);
+  if (!m) return null;
+  const dd = m[1];
+  const mm = m[2];
+  const yyyy = m[3];
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function genderCodeFromProvider(raw) {
+  const c = String(raw ?? '').trim().toUpperCase();
+  if (c === 'M' || c === 'F') return c;
+  if (c === 'T' || c === 'X' || c === 'O') return 'X';
+  return c || null;
+}
+
+function buildAadhaarAddress(parts) {
+  return parts
+    .map((v) => String(v ?? '').trim())
+    .filter((v) => Boolean(v))
+    .join(', ');
+}
+
+function photoDataUrlFromBase64(photo) {
+  const v = String(photo ?? '').trim();
+  if (!v) return null;
+  if (v.startsWith('data:image/')) return v;
+  return `data:image/jpeg;base64,${v}`;
+}
+
+function normalizeForNameMatch(name) {
+  return String(name ?? '')
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function namesLikelyMatch(a, b) {
+  const x = normalizeForNameMatch(a);
+  const y = normalizeForNameMatch(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (x.length >= 4 && y.includes(x)) return true;
+  if (y.length >= 4 && x.includes(y)) return true;
+  return false;
 }
 
 const EMPLOYEE_JOB_FORM_FIELDS =
@@ -406,21 +541,37 @@ router.post('/aadhaar/send-otp', async (req, res, next) => {
       return res.status(400).json({ error: 'No matching onboarding record for this mobile number.' });
     }
 
-    const otp = DEMO_AADHAAR_OTP;
-    const key = sessionKey(row.id, mobile);
-    aadhaarOtpBySession.set(key, {
-      otp,
-      aadhaar: aadhaarDigits,
-      expires: Date.now() + OTP_TTL_MS
-    });
-
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(
-        `[public/onboarding] Aadhaar demo OTP for employee ${row.id}: ${otp} (fixed until SMS is wired)`
-      );
+    const edgeResult = await invokeAadhaarSendOtpEdge({ uid: aadhaarDigits });
+    const sessionId = String(edgeResult?.sessionId ?? '').trim();
+    const transactionId = String(edgeResult?.transactionId ?? '').trim() || null;
+    if (!sessionId) {
+      return res.status(502).json({ error: 'Aadhaar OTP provider did not return a valid session id.' });
     }
 
-    return res.json({ ok: true });
+    const now = new Date().toISOString();
+    const { error: updErr } = await supabaseAdmin.from('job_app_form').upsert(
+      {
+        employee_id: row.id,
+        client_id: row.client_id,
+        name: row.name,
+        mobile: row.mobile,
+        email: row.email ?? null,
+        designation: row.designation ?? null,
+        aadhaar_number: aadhaarDigits,
+        aad_otp_session_id: sessionId,
+        aad_otp_transaction_id: transactionId,
+        aad_otp_requested_at: now,
+        updated_at: now,
+      },
+      { onConflict: 'employee_id' }
+    );
+    if (updErr) throw updErr;
+
+    return res.json({
+      ok: true,
+      sessionId,
+      transactionId,
+    });
   } catch (err) {
     next(err);
   }
@@ -444,19 +595,39 @@ router.post('/aadhaar/verify-otp', async (req, res, next) => {
       return res.status(400).json({ error: 'No matching onboarding record for this mobile number.' });
     }
 
-    const key = sessionKey(row.id, mobile);
-    const entry = aadhaarOtpBySession.get(key);
-    if (!entry || Date.now() > entry.expires) {
-      return res.status(400).json({ error: 'OTP expired or not found. Request a new OTP.' });
-    }
-    if (entry.otp !== otpIn) {
-      return res.status(400).json({ error: 'Invalid OTP' });
+    const { data: formCurrent, error: formCurrentErr } = await supabaseAdmin
+      .from('job_app_form')
+      .select('aadhaar_number, aad_otp_session_id')
+      .eq('employee_id', row.id)
+      .eq('mobile', mobile)
+      .maybeSingle();
+    if (formCurrentErr) throw formCurrentErr;
+    const sessionId = String(formCurrent?.aad_otp_session_id ?? '').trim();
+    if (!sessionId) {
+      return res.status(400).json({ error: 'No active Aadhaar session found. Please request OTP again.' });
     }
 
-    aadhaarOtpBySession.delete(key);
+    const edgeResult = await invokeAadhaarVerifyOtpEdge({ sessionId, otp: otpIn });
+    const providerData = edgeResult?.data ?? {};
+    const aadName = String(providerData?.name ?? '').trim();
+    const aadCareOf = String(providerData?.careof ?? '').trim();
+    const aadDob = isoFromDdMmYyyy(providerData?.dob);
+    const aadGender = genderCodeFromProvider(providerData?.gender);
+    const aadState = String(providerData?.state ?? '').trim();
+    const aadDistrict = String(providerData?.district ?? '').trim();
+    const aadPincode = String(providerData?.pincode ?? '').trim();
+    const aadAddress = buildAadhaarAddress([
+      providerData?.house,
+      providerData?.street,
+      providerData?.locality,
+      providerData?.subDistrict,
+      providerData?.district,
+      providerData?.state,
+      providerData?.pincode,
+    ]);
+    const aadProfilePhoto = photoDataUrlFromBase64(providerData?.photo);
 
     const now = new Date().toISOString();
-    const kyc = { ...DEMO_AADHAAR_KYC };
     const { error: upsertErr } = await supabaseAdmin.from('job_app_form').upsert(
       {
         employee_id: row.id,
@@ -465,10 +636,19 @@ router.post('/aadhaar/verify-otp', async (req, res, next) => {
         mobile: row.mobile,
         email: row.email ?? null,
         designation: row.designation ?? null,
-        aadhaar_number: entry.aadhaar,
-        ...kyc,
-        pd_city: pdCityFromAadDistrict(kyc.aad_district),
-        pd_age: computePdAgeFromAadDob(kyc.aad_dob),
+        aadhaar_number: String(formCurrent?.aadhaar_number ?? '').trim() || null,
+        aad_profile_photo: aadProfilePhoto,
+        aad_name: aadName || null,
+        aad_care_of: aadCareOf || null,
+        aad_dob: aadDob,
+        aad_gender: aadGender,
+        aad_address: aadAddress || null,
+        aad_state: aadState || null,
+        aad_district: aadDistrict || null,
+        aad_pincode: aadPincode || null,
+        aad_otp_transaction_id: String(edgeResult?.transactionId ?? '').trim() || null,
+        pd_city: pdCityFromAadDistrict(aadDistrict),
+        pd_age: computePdAgeFromAadDob(aadDob),
         updated_at: now,
       },
       { onConflict: 'employee_id' }
@@ -476,7 +656,105 @@ router.post('/aadhaar/verify-otp', async (req, res, next) => {
 
     if (upsertErr) throw upsertErr;
 
-    return res.json({ verified: true, aadhaarDetails: DEMO_AADHAAR_KYC });
+    return res.json({
+      verified: true,
+      aadhaarDetails: {
+        aad_profile_photo: aadProfilePhoto,
+        aad_name: aadName || '',
+        aad_care_of: aadCareOf || '',
+        aad_dob: aadDob,
+        aad_gender: aadGender,
+        aad_address: aadAddress || '',
+        aad_state: aadState || '',
+        aad_district: aadDistrict || '',
+        aad_pincode: aadPincode || '',
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/bank/verify', async (req, res, next) => {
+  try {
+    const mobile = normalizeMobile(req.body?.mobile);
+    const employeeIdFilter = String(req.body?.employee_id ?? '').trim();
+    const accountHolderName = String(req.body?.account_holder_name ?? '').trim();
+    const accountNumber = String(req.body?.account_number ?? '').replace(/\D/g, '');
+    const ifsc = String(req.body?.ifsc ?? '')
+      .replace(/\s/g, '')
+      .toUpperCase();
+
+    if (!TEN_DIGIT_REGEX.test(mobile)) {
+      return res.status(400).json({ error: 'mobile must be a valid 10-digit number' });
+    }
+    if (accountHolderName.length < 2) {
+      return res.status(400).json({ error: 'Account holder name is required.' });
+    }
+    if (!ACCOUNT_NUMBER_REGEX.test(accountNumber)) {
+      return res.status(400).json({ error: 'Account number must be 6–18 digits.' });
+    }
+    if (!IFSC_CODE_REGEX.test(ifsc)) {
+      return res.status(400).json({ error: 'Enter a valid IFSC code.' });
+    }
+
+    const row = await resolveOnboardingEmployee(mobile, employeeIdFilter || null);
+    if (!row) {
+      return res.status(400).json({ error: 'No matching onboarding record for this mobile number.' });
+    }
+
+    const edgeResult = await invokeBankVerifyEdge({
+      idNumber: accountNumber,
+      ifsc,
+    });
+    const providerData = edgeResult?.data ?? {};
+    const accountExists = Boolean(providerData?.account_exists);
+    const providerFullName = String(providerData?.full_name ?? '').trim();
+
+    if (!accountExists) {
+      return res.status(400).json({ error: 'Bank account could not be verified. Please check details and try again.' });
+    }
+    if (!providerFullName) {
+      return res.status(400).json({ error: 'Bank verification did not return account holder name.' });
+    }
+
+    const employeeName = String(row?.name ?? '').trim();
+    const holderMatchesEmployee = namesLikelyMatch(employeeName, providerFullName);
+    if (!holderMatchesEmployee) {
+      return res.status(400).json({
+        error: 'Account holder name does not match employee name.',
+        details: {
+          employee_name: employeeName,
+          bank_name: providerFullName,
+        },
+      });
+    }
+
+    const now = new Date().toISOString();
+    const { error: upsertErr } = await supabaseAdmin.from('job_app_form').upsert(
+      {
+        employee_id: row.id,
+        client_id: row.client_id,
+        name: row.name,
+        mobile: row.mobile,
+        email: row.email ?? null,
+        designation: row.designation ?? null,
+        kyc_account_holder_name: providerFullName,
+        kyc_account_number: accountNumber,
+        kyc_ifsc_code: ifsc,
+        updated_at: now,
+      },
+      { onConflict: 'employee_id' }
+    );
+    if (upsertErr) throw upsertErr;
+
+    return res.json({
+      verified: true,
+      account_holder_name: providerFullName,
+      account_number: accountNumber,
+      ifsc,
+      ifsc_details: providerData?.ifsc_details ?? null,
+    });
   } catch (err) {
     next(err);
   }

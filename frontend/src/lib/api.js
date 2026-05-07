@@ -188,6 +188,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mobile, employee_id: employeeId || null, otp })
     }),
+  verifyBankAccount: ({ mobile, employeeId, accountHolderName, accountNumber, ifsc }) =>
+    request('/api/public/onboarding/bank/verify', {
+      method: 'POST',
+      body: JSON.stringify({
+        mobile,
+        employee_id: employeeId || null,
+        account_holder_name: accountHolderName,
+        account_number: accountNumber,
+        ifsc
+      })
+    }),
   sendOnboardingStatusOtp: ({ mobile, employeeId }) =>
     request('/api/public/onboarding/status/send-otp', {
       method: 'POST',

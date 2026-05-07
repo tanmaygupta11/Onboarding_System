@@ -530,6 +530,7 @@ function KycDocumentsForm({ jobForm, mobile, employeeId, onPrevious, onSaveSucce
   const [panVerified, setPanVerified] = useState(false);
   const [panVerifyMsg, setPanVerifyMsg] = useState('');
   const [bankVerified, setBankVerified] = useState(false);
+  const [bankVerifying, setBankVerifying] = useState(false);
   const [bankVerifyMsg, setBankVerifyMsg] = useState('');
 
   const [saving, setSaving] = useState(false);
@@ -677,6 +678,7 @@ function KycDocumentsForm({ jobForm, mobile, employeeId, onPrevious, onSaveSucce
   };
 
   const handleVerifyBank = () => {
+    if (bankVerifying) return;
     setBankVerifyMsg('');
     const h = String(accountHolder).trim();
     const acct = String(accountNumber).replace(/\s/g, '');
@@ -698,8 +700,29 @@ function KycDocumentsForm({ jobForm, mobile, employeeId, onPrevious, onSaveSucce
       setBankVerifyMsg('Enter a valid IFSC (e.g. HDFC0001234).');
       return;
     }
-    setBankVerified(true);
-    setBankVerifyMsg('Details look valid. Bank verification will be completed later.');
+    setBankVerifying(true);
+    api
+      .verifyBankAccount({
+        mobile,
+        employeeId,
+        accountHolderName: h,
+        accountNumber: acct,
+        ifsc: ifscNorm,
+      })
+      .then((result) => {
+        setAccountHolder(result.account_holder_name ?? h);
+        setAccountNumber(result.account_number ?? acct);
+        setIfsc(result.ifsc ?? ifscNorm);
+        setBankVerified(true);
+        setBankVerifyMsg('Bank details verified successfully.');
+      })
+      .catch((err) => {
+        setBankVerified(false);
+        setBankVerifyMsg(err.message || 'Bank verification failed. Please check details and try again.');
+      })
+      .finally(() => {
+        setBankVerifying(false);
+      });
   };
 
   const shouldShow = (field) => !correction?.active || correction.visibleFields.has(field);
@@ -923,9 +946,10 @@ function KycDocumentsForm({ jobForm, mobile, employeeId, onPrevious, onSaveSucce
         {(shouldShow('kyc_account_holder_name') || shouldShow('kyc_account_number') || shouldShow('kyc_ifsc_code')) && <button
           type="button"
           onClick={handleVerifyBank}
+          disabled={bankVerifying}
           className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
         >
-          Verify bank
+          {bankVerifying ? 'Verifying…' : 'Verify bank'}
         </button>}
         {(shouldShow('kyc_account_holder_name') || shouldShow('kyc_account_number') || shouldShow('kyc_ifsc_code')) && bankVerifyMsg && (
           <p className={`text-sm ${bankVerified ? 'text-emerald-700' : 'text-rose-600'}`}>{bankVerifyMsg}</p>
@@ -2188,8 +2212,7 @@ export default function OnboardingForm() {
                     </div>
 
                     <p className="mb-2 mt-6 text-xs text-slate-500">
-                      Demo KYC data is shown until the Aadhaar API is connected. Details are stored on your application
-                      record.
+                      Aadhaar KYC details are fetched from verification response and stored on your application record.
                     </p>
                     {proceedError && <p className="mt-2 text-sm text-rose-600">{proceedError}</p>}
                     <button
