@@ -12,7 +12,7 @@ const upload = multer({
 });
 const SEND_ONBOARDING_EMAIL_EDGE_FUNCTION =
   process.env.SEND_ONBOARDING_EMAIL_EDGE_FUNCTION || 'send-onboarding-email';
-const FRONTEND_URL = String(process.env.FRONTEND_URL || 'http://localhost:5173').trim() || 'http://localhost:5173';
+const FRONTEND_URL = String(process.env.FRONTEND_URL || 'http://localhost:8088').trim() || 'http://localhost:8088';
 const ONBOARDING_EMAIL_SUBJECT = 'Complete your onboarding with Awign';
 
 function buildOnboardingFormLink(employeeId) {
