@@ -12,6 +12,9 @@ const upload = multer({
 });
 const SEND_ONBOARDING_EMAIL_EDGE_FUNCTION =
   process.env.SEND_ONBOARDING_EMAIL_EDGE_FUNCTION || 'send-onboarding-email';
+const SEND_ONBOARDING_WHATSAPP_EDGE_FUNCTION =
+  process.env.SEND_ONBOARDING_WHATSAPP_EDGE_FUNCTION || 'send-onboarding-whatsapp';
+const WHATSAPP_COUNTRY_CODE = String(process.env.WHATSAPP_COUNTRY_CODE || '91').replace(/\D/g, '') || '91';
 const FRONTEND_URL = String(process.env.FRONTEND_URL || 'http://localhost:8088').trim() || 'http://localhost:8088';
 const ONBOARDING_EMAIL_SUBJECT = 'Complete your onboarding with Awign';
 
@@ -46,6 +49,50 @@ async function invokeSendOnboardingEmailEdge({ recipients }) {
       subject: ONBOARDING_EMAIL_SUBJECT,
       recipients
     })
+  });
+  const raw = await resp.text();
+  let body = null;
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch {
+    body = null;
+  }
+  if (!resp.ok) {
+    const msg = body?.error || body?.message || `Edge function failed (${resp.status})`;
+    const err = new Error(msg);
+    err.details = body?.upstream ?? body ?? null;
+    throw err;
+  }
+  return body ?? {};
+}
+
+function formatWhatsAppNumber(rawMobile) {
+  const digits = String(rawMobile ?? '').replace(/\D/g, '');
+  if (!digits) return null;
+  const targetLength = WHATSAPP_COUNTRY_CODE.length + 10;
+  if (digits.startsWith(WHATSAPP_COUNTRY_CODE) && digits.length === targetLength) {
+    return digits;
+  }
+  const localTenDigits = digits.length >= 10 ? digits.slice(-10) : digits;
+  if (localTenDigits.length !== 10) return null;
+  return `${WHATSAPP_COUNTRY_CODE}${localTenDigits}`;
+}
+
+async function invokeSendOnboardingWhatsappEdge({ recipients }) {
+  const supabaseUrl = String(process.env.SUPABASE_URL ?? '').trim();
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required to invoke edge functions.');
+  }
+  const endpoint = `${supabaseUrl}/functions/v1/${encodeURIComponent(SEND_ONBOARDING_WHATSAPP_EDGE_FUNCTION)}`;
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ recipients })
   });
   const raw = await resp.text();
   let body = null;
@@ -663,57 +710,112 @@ router.post('/initiate-onboarding', async (req, res, next) => {
       .from('employees')
       .update({ onboarding_initiated: true, onboarding_status: 'FORM_SENT' })
       .in('id', validIds)
-      .select('id, name, email');
+      .select('id, name, email, mobile');
     if (error) throw error;
     const updatedRows = updated ?? [];
 
     const skippedRecipients = [];
     const emailRecipients = [];
+    const skippedWhatsappRecipients = [];
+    const whatsappRecipients = [];
     for (const row of updatedRows) {
+      const trimmedName = String(row.name ?? '').trim();
+      const employeeLink = buildOnboardingFormLink(row.id);
       const email = String(row.email ?? '').trim();
       if (!email) {
         skippedRecipients.push({
           employee_id: row.id,
           reason: 'no_email'
         });
-        continue;
+      } else {
+        emailRecipients.push({
+          employee_id: row.id,
+          name: trimmedName,
+          email,
+          link: employeeLink
+        });
       }
-      emailRecipients.push({
-        employee_id: row.id,
-        name: String(row.name ?? '').trim(),
-        email,
-        link: buildOnboardingFormLink(row.id)
-      });
+
+      const to = formatWhatsAppNumber(row.mobile);
+      if (!to) {
+        skippedWhatsappRecipients.push({
+          employee_id: row.id,
+          reason: 'no_mobile'
+        });
+      } else {
+        whatsappRecipients.push({
+          employee_id: row.id,
+          name: trimmedName,
+          empid: String(row.id),
+          to
+        });
+      }
     }
 
-    let sentRecipients = [];
-    let failedRecipients = [];
+    let emailedRecipients = [];
+    let emailFailedRecipients = [];
     if (emailRecipients.length > 0) {
       try {
         const emailResult = await invokeSendOnboardingEmailEdge({ recipients: emailRecipients });
         const sent = Array.isArray(emailResult?.sent) ? emailResult.sent : [];
         const failed = Array.isArray(emailResult?.failed) ? emailResult.failed : [];
-        sentRecipients = sent
+        emailedRecipients = sent
           .map((item) => ({
             employee_id: String(item.employee_id ?? '').trim(),
             email: String(item.email ?? '').trim()
           }))
           .filter((item) => Boolean(item.employee_id));
-        failedRecipients = failed
+        emailFailedRecipients = failed
           .map((item) => ({
             employee_id: String(item.employee_id ?? '').trim(),
             email: String(item.email ?? '').trim(),
             error: String(item.error ?? 'Email send failed').trim()
           }))
           .filter((item) => Boolean(item.employee_id));
-        if (sentRecipients.length === 0 && failedRecipients.length === 0) {
-          sentRecipients = emailRecipients.map((r) => ({ employee_id: r.employee_id, email: r.email }));
+        if (emailedRecipients.length === 0 && emailFailedRecipients.length === 0) {
+          emailedRecipients = emailRecipients.map((r) => ({ employee_id: r.employee_id, email: r.email }));
         }
       } catch (sendErr) {
         const reason = String(sendErr?.message || 'Email service unavailable');
-        failedRecipients = emailRecipients.map((r) => ({
+        emailFailedRecipients = emailRecipients.map((r) => ({
           employee_id: r.employee_id,
           email: r.email,
+          error: reason
+        }));
+      }
+    }
+
+    let whatsappSentRecipients = [];
+    let whatsappFailedRecipients = [];
+    if (whatsappRecipients.length > 0) {
+      try {
+        const whatsappResult = await invokeSendOnboardingWhatsappEdge({ recipients: whatsappRecipients });
+        const sent = Array.isArray(whatsappResult?.sent) ? whatsappResult.sent : [];
+        const failed = Array.isArray(whatsappResult?.failed) ? whatsappResult.failed : [];
+        whatsappSentRecipients = sent
+          .map((item) => ({
+            employee_id: String(item.employee_id ?? '').trim(),
+            to: String(item.to ?? '').trim()
+          }))
+          .filter((item) => Boolean(item.employee_id));
+        whatsappFailedRecipients = failed
+          .map((item) => ({
+            employee_id: String(item.employee_id ?? '').trim(),
+            to: String(item.to ?? '').trim(),
+            error: String(item.error ?? 'WhatsApp send failed').trim()
+          }))
+          .filter((item) => Boolean(item.employee_id));
+        if (whatsappSentRecipients.length === 0 && whatsappFailedRecipients.length === 0) {
+          whatsappSentRecipients = whatsappRecipients.map((r) => ({
+            employee_id: r.employee_id,
+            to: r.to
+          }));
+        }
+      } catch (sendErr) {
+        const reason = String(sendErr?.message || 'WhatsApp service unavailable');
+        whatsappFailedRecipients = whatsappRecipients.map((r) => ({
+          employee_id: r.employee_id,
+          to: r.to,
           error: reason
         }));
       }
@@ -722,12 +824,18 @@ router.post('/initiate-onboarding', async (req, res, next) => {
     res.json({
       updated: updatedRows.length,
       employee_ids: updatedRows.map((r) => r.id),
-      emailed: sentRecipients.length,
-      emailed_employee_ids: sentRecipients.map((r) => r.employee_id),
+      emailed: emailedRecipients.length,
+      emailed_employee_ids: emailedRecipients.map((r) => r.employee_id),
       skipped: skippedRecipients.length,
       skipped_recipients: skippedRecipients,
-      failed: failedRecipients.length,
-      failed_recipients: failedRecipients
+      failed: emailFailedRecipients.length,
+      failed_recipients: emailFailedRecipients,
+      whatsapp_sent: whatsappSentRecipients.length,
+      whatsapp_sent_employee_ids: whatsappSentRecipients.map((r) => r.employee_id),
+      whatsapp_skipped: skippedWhatsappRecipients.length,
+      whatsapp_skipped_recipients: skippedWhatsappRecipients,
+      whatsapp_failed: whatsappFailedRecipients.length,
+      whatsapp_failed_recipients: whatsappFailedRecipients
     });
   } catch (err) {
     next(err);
