@@ -2,8 +2,16 @@ import { supabase } from './supabase';
 
 /** Base URL for the Express API (no trailing slash). Empty = same-origin, paths like `/api/me`. */
 const rawBase = import.meta.env.VITE_API_BASE_URL;
-const BASE_URL =
-  typeof rawBase === 'string' && rawBase.trim() !== '' ? rawBase.trim().replace(/\/+$/, '') : '';
+const BASE_URL = normalizeApiBaseUrl(rawBase);
+
+function normalizeApiBaseUrl(value) {
+  if (typeof value !== 'string') return '';
+
+  const trimmed = value.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+
+  return trimmed.endsWith('/api') ? trimmed.slice(0, -4) : trimmed;
+}
 
 function apiUrl(path) {
   const p = path.startsWith('/') ? path : `/${path}`;
@@ -57,7 +65,7 @@ async function request(path, options = {}) {
 
 async function uploadRequest(path, formData) {
   const headers = { ...(await authHeader()) };
-  const res = await fetchWithTimeout(`${BASE_URL}${path}`, { method: 'POST', headers, body: formData });
+  const res = await fetchWithTimeout(apiUrl(path), { method: 'POST', headers, body: formData });
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
   if (!res.ok) {

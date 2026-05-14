@@ -12,7 +12,16 @@ import publicOnboardingRouter from './routes/publicOnboarding.js';
 
 const app = express();
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:8088' }));
+function parseCorsOrigin(value) {
+  const origins = String(value || 'http://localhost:8088')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return origins.length === 1 ? origins[0] : origins;
+}
+
+app.use(cors({ origin: parseCorsOrigin(process.env.CORS_ORIGIN) }));
 app.use(express.json());
 
 app.get('/', (_req, res) =>

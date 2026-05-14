@@ -10,15 +10,18 @@ This project is containerized with:
 Create or update:
 
 - `backend/.env` (required for backend runtime secrets)
-- `frontend/.env` (only needed for local dev; Docker frontend build uses `VITE_API_BASE_URL=/api` by default)
+- repo-root `.env` (optional; copied from `.env.example` when you want Docker Compose to pass a frontend API base URL)
+- `frontend/.env` (only needed for local dev; Docker uses the `VITE_API_BASE_URL` build arg from the repo-root `.env` or shell)
 
 At minimum, backend needs:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `PORT=8089`
-- `CORS_ORIGIN=http://<your-aws-host>:8088` (or your domain)
-- `FRONTEND_URL=http://<your-aws-host>:8088` (or your domain)
+- `CORS_ORIGIN=https://awign-onboarding-system.awignhub.in,http://<your-aws-host>:8088`
+- `FRONTEND_URL=https://awign-onboarding-system.awignhub.in`
+
+`CORS_ORIGIN` may contain a comma-separated list when both the public domain and raw port URL need to work.
 
 ## 2) Build and start on the EC2 host
 
@@ -56,13 +59,15 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
-## 5) Optional custom frontend API base URL
+## 5) Frontend API base URL
 
-By default, frontend build uses `VITE_API_BASE_URL=/api` and Nginx proxies to backend service.
+By default, the frontend build leaves `VITE_API_BASE_URL` empty. That makes browser requests use same-origin paths like `/api/me`, and the frontend container's Nginx proxy sends them to the backend service.
 
-If needed, override at build time:
+For the split production domains, build the frontend with the backend origin only. Do not include `/api`; the application already prefixes every endpoint with `/api`.
 
 ```bash
-VITE_API_BASE_URL=http://<your-aws-host>:8089 docker compose build frontend
+VITE_API_BASE_URL=https://awign-onboarding-system-api.awignhub.in docker compose build frontend
 docker compose up -d frontend
 ```
+
+Avoid setting `VITE_API_BASE_URL` to `/api` or `https://.../api`; older builds with that value generated requests like `/api/api/me`.
