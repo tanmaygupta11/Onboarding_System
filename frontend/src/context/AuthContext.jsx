@@ -92,5 +92,6 @@ export function useAuth() {
 export function homeRouteForRole(role) {
   if (role === 'PROGRAM_MANAGER') return '/pm-dashboard/clients';
   if (role === 'PAYROLL_LEAD') return '/dashboard';
+  if (role === 'PAYROLL_HEAD') return '/admin-dashboard';
   return '/login';
 }

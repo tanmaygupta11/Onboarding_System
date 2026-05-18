@@ -22,7 +22,9 @@ const PM_RAHUL  = '11111111-1111-1111-1111-111111111111';
 const PM_PRIYA  = '22222222-2222-2222-2222-222222222222';
 const PM_AMIT   = '33333333-3333-3333-3333-333333333333';
 const PAYROLL_LEAD_ID = '44444444-4444-4444-4444-444444444444';
+const PAYROLL_HEAD_ID = '55555555-5555-5555-5555-555555555555';
 const PAYROLL_LEAD_EMAIL = 'payrolllead@test.com';
+const PAYROLL_HEAD_EMAIL = 'payrollhead@test.com';
 const DEMO_PASSWORD = '123456';
 
 const programManagers = [
@@ -167,6 +169,20 @@ async function run() {
     role: 'PAYROLL_LEAD'
   });
 
+  console.log('Seeding Payroll Head auth user + row...');
+  await ensureAuthUser({
+    id: PAYROLL_HEAD_ID,
+    email: PAYROLL_HEAD_EMAIL,
+    password: DEMO_PASSWORD,
+    name: 'Demo Payroll Head'
+  });
+  await upsertUser({
+    id: PAYROLL_HEAD_ID,
+    name: 'Demo Payroll Head',
+    email: PAYROLL_HEAD_EMAIL,
+    role: 'PAYROLL_HEAD'
+  });
+
   console.log('Seeding demo clients...');
   const clientIds = {};
   for (const c of demoClients) {
@@ -181,6 +197,7 @@ async function run() {
   });
 
   console.log('\nSeed complete. Demo logins (password: 123456):');
+  console.log(`  Payroll Head:     ${PAYROLL_HEAD_EMAIL}`);
   console.log(`  Payroll Lead:     ${PAYROLL_LEAD_EMAIL}`);
   for (const pm of programManagers) {
     console.log(`  Program Manager:  ${pm.email}  (${pm.name})`);

@@ -5,6 +5,7 @@ import ClientForm from './pages/ClientForm';
 import PmLayout from './components/PmLayout';
 import PayrollLeadLayout from './components/PayrollLeadLayout';
 import PayrollClientLayout from './components/PayrollClientLayout';
+import PayrollHeadLayout from './components/PayrollHeadLayout';
 import PmDashboardHome from './pages/PmDashboardHome';
 import PmClientsPage from './pages/PmClientsPage';
 import PmClientDetail from './pages/PmClientDetail';
@@ -14,6 +15,8 @@ import PayrollClientApprovedEmployeesPage from './pages/PayrollClientApprovedEmp
 import PayrollClientFinalApprovedEmployeesPage from './pages/PayrollClientFinalApprovedEmployeesPage';
 import PayrollClientRejectedEmployeesPage from './pages/PayrollClientRejectedEmployeesPage';
 import PayrollClientIdentityNumbersPage from './pages/PayrollClientIdentityNumbersPage';
+import PayrollHeadDashboardHome from './pages/PayrollHeadDashboardHome';
+import PayrollHeadClientsPage from './pages/PayrollHeadClientsPage';
 import OnboardingForm from './pages/OnboardingForm';
 import OnboardingStatusPage from './pages/OnboardingStatusPage';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -88,6 +91,19 @@ export default function App() {
         <Route path="client/:id" element={<PmClientDefaultRedirect />} />
         <Route path="client/:id/:tab" element={<PmClientDetail />} />
       </Route>
+      <Route
+        path="/admin-dashboard"
+        element={
+          <ProtectedRoute role="PAYROLL_HEAD">
+            <PayrollHeadLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="dashboard" element={<PayrollHeadDashboardHome />} />
+        <Route path="clients" element={<PayrollHeadClientsPage />} />
+      </Route>
+
       <Route path="/onboardingform" element={<OnboardingForm />} />
       <Route path="/onboarding-status" element={<OnboardingStatusPage />} />
 
